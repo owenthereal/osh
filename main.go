@@ -67,7 +67,10 @@ func main() {
 			}
 		}
 
-		spawnPrograms(cmds...)
+		if len(cmds) > 0 {
+			spawnPrograms(cmds...)
+		}
+
 		prompt()
 	}
 
@@ -81,7 +84,12 @@ func prompt() {
 }
 
 func splitOnPipes(line string) (commands []string) {
-	commands = strings.Split(line, "|")
+	pipeRegexp := regexp.MustCompile("([^\"'|]+)|[\"']([^\"']+)[\"']")
+	if pipeRegexp.MatchString(line) {
+		commands = pipeRegexp.FindAllString(line, -1)
+	} else {
+		commands = append(commands, line)
+	}
 
 	for i, command := range commands {
 		commands[i] = strings.TrimSpace(command)
@@ -155,10 +163,6 @@ func spawnPrograms(cmds ...*exec.Cmd) {
 }
 
 func pipeline(cmds []*exec.Cmd) (pipeLineOutput, collectedStandardError []byte, pipeLineError error) {
-	if len(cmds) < 1 {
-		return nil, nil, nil
-	}
-
 	// Collect the output from the command(s)
 	var output bytes.Buffer
 	var stderr bytes.Buffer
