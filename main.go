@@ -58,8 +58,13 @@ func main() {
 			if name == "" {
 				continue
 			}
-			cmd := exec.Command(name, args...)
-			cmds = append(cmds, cmd)
+
+			if isBuiltin(name) {
+				callBuiltin(name, args)
+			} else {
+				cmd := exec.Command(name, args...)
+				cmds = append(cmds, cmd)
+			}
 		}
 
 		spawnPrograms(cmds...)
