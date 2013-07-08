@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -127,24 +126,6 @@ func isBuiltin(name string) bool {
 func callBuiltin(name string, args []string) {
 	builtin, _ := BUILTINS[name]
 	builtin.Run(args)
-}
-
-func spawnProgram(name string, args []string, placeHolderOut io.WriteCloser, placeHolderIn io.ReadCloser) {
-	cmdFullPath, err := exec.LookPath(name)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "osh: command not found: %s\n", name)
-		return
-	}
-
-	c := exec.Command(cmdFullPath, args...)
-	c.Env = os.Environ()
-	c.Stdin = placeHolderIn
-	c.Stdout = placeHolderOut
-	c.Stderr = c.Stdout
-
-	if err = c.Run(); err != nil {
-		panic(err)
-	}
 }
 
 func spawnPrograms(cmds ...*exec.Cmd) {
