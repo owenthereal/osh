@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -27,7 +27,7 @@ var BUILTINS = map[string]*Builtin{
 		os.Exit(code)
 	}},
 	"exec": &Builtin{func(args []string) {
-		spawnProgram(args[0], args[1:])
+		spawnProgram(args[0], args[1:], os.Stdin, os.Stdout)
 	}},
 	"set": &Builtin{func(args []string) {
 		for _, arg := range args {
@@ -44,11 +44,34 @@ func main() {
 	prompt()
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		name, args := parseCmd(scanner.Text())
-		if isBuiltin(name) {
-			callBuiltin(name, args)
-		} else {
-			spawnProgram(name, args)
+		commands := splitOnPipes(scanner.Text())
+		var placeHolderIn io.ReadCloser = os.Stdin
+		var placeHolderOut io.WriteCloser = os.Stdout
+		var pipeReader *io.PipeReader
+
+		for i, command := range commands {
+			name, args := parseCommand(command)
+			if isBuiltin(name) {
+				callBuiltin(name, args)
+			} else {
+				if i+1 < len(commands) {
+					pipeReader, placeHolderOut = io.Pipe()
+				} else {
+					placeHolderOut = os.Stdout
+				}
+
+				spawnProgram(name, args, placeHolderOut, placeHolderIn)
+
+				if placeHolderOut != os.Stdout {
+					placeHolderOut.Close()
+				}
+
+				if placeHolderIn != os.Stdin {
+					placeHolderIn.Close()
+				}
+
+				placeHolderIn = pipeReader
+			}
 		}
 		prompt()
 	}
@@ -62,9 +85,24 @@ func prompt() {
 	fmt.Fprintf(os.Stdout, "%s ", os.Getenv("PROMPT"))
 }
 
-func parseCmd(text string) (name string, args []string) {
+func splitOnPipes(line string) (commands []string) {
+	pipesRegexp := regexp.MustCompile("([^\"'|]+)|[\"']([^\"']+)[\"']")
+	if pipesRegexp.MatchString(line) {
+		commands = pipesRegexp.FindAllString(line, -1)
+	} else {
+		commands = append(commands, line)
+	}
+
+	for i, command := range commands {
+		commands[i] = strings.TrimSpace(command)
+	}
+
+	return
+}
+
+func parseCommand(line string) (name string, args []string) {
 	regexpBySpace := regexp.MustCompile("\\s+")
-	cmd := regexpBySpace.Split(text, -1)
+	cmd := regexpBySpace.Split(line, -1)
 
 	name = cmd[0]
 	// expand environment variables
@@ -93,23 +131,22 @@ func callBuiltin(name string, args []string) {
 	builtin.Run(args)
 }
 
-func spawnProgram(name string, args []string) {
+func spawnProgram(name string, args []string, placeHolderOut io.WriteCloser, placeHolderIn io.ReadCloser) {
 	cmdFullPath, err := exec.LookPath(name)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "osh: command not found: %s", name)
 	}
 
-	var stdout, stderr bytes.Buffer
 	c := exec.Command(cmdFullPath, args...)
 	c.Env = os.Environ()
-	c.Stdin = os.Stdin
-	c.Stdout = &stdout
-	c.Stderr = &stderr
+
+	c.Stdin = placeHolderIn
+	c.Stdout = placeHolderOut
+	c.Stderr = c.Stdout
 
 	err = c.Run()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, stderr.String())
+		//fmt.Fprintln(os.Stderr, stderr.String())
+		panic(err)
 	}
-
-	fmt.Fprint(os.Stdout, stdout.String())
 }
