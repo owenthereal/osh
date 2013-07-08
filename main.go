@@ -67,7 +67,17 @@ func parseCmd(text string) (name string, args []string) {
 	cmd := regexpBySpace.Split(text, -1)
 
 	name = cmd[0]
-	args = cmd[1:]
+	// expand environment variables
+	// somehow os/exec.Command.Run() doesn't expand automatically
+	envVarRegexp := regexp.MustCompile("^\\$(.+)$")
+	for _, arg := range cmd[1:] {
+		if envVarRegexp.MatchString(arg) {
+			match := envVarRegexp.FindStringSubmatch(arg)
+			arg = os.Getenv(match[1])
+		}
+
+		args = append(args, arg)
+	}
 
 	return
 }
@@ -89,9 +99,10 @@ func spawnProgram(name string, args []string) {
 		fmt.Fprintf(os.Stderr, "osh: command not found: %s", name)
 	}
 
-	var stdin, stdout, stderr bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	c := exec.Command(cmdFullPath, args...)
-	c.Stdin = &stdin
+	c.Env = os.Environ()
+	c.Stdin = os.Stdin
 	c.Stdout = &stdout
 	c.Stderr = &stderr
 
