@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -27,7 +28,8 @@ var BUILTINS = map[string]*Builtin{
 		os.Exit(code)
 	}},
 	"exec": &Builtin{func(args []string) {
-		spawnProgram(args[0], args[1:], os.Stdin, os.Stdout)
+		cmd := exec.Command(args[0], args[1:]...)
+		spawnPrograms(cmd)
 	}},
 	"set": &Builtin{func(args []string) {
 		for _, arg := range args {
@@ -39,44 +41,28 @@ var BUILTINS = map[string]*Builtin{
 	}},
 }
 
-func main() {
+func init() {
 	os.Setenv("PROMPT", "->")
+}
+
+func main() {
 	prompt()
+
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		commands := splitOnPipes(scanner.Text())
-		var placeHolderIn io.ReadCloser = os.Stdin
-		var placeHolderOut io.WriteCloser = os.Stdout
-		var pipeReader *io.PipeReader
 
-		for i, command := range commands {
+		var cmds []*exec.Cmd
+		for _, command := range commands {
 			name, args := parseCommand(command)
 			if name == "" {
 				continue
 			}
-
-			if isBuiltin(name) {
-				callBuiltin(name, args)
-			} else {
-				if i+1 < len(commands) {
-					pipeReader, placeHolderOut = io.Pipe()
-				} else {
-					placeHolderOut = os.Stdout
-				}
-
-				spawnProgram(name, args, placeHolderOut, placeHolderIn)
-
-				if placeHolderOut != os.Stdout {
-					placeHolderOut.Close()
-				}
-
-				if placeHolderIn != os.Stdin {
-					placeHolderIn.Close()
-				}
-
-				placeHolderIn = pipeReader
-			}
+			cmd := exec.Command(name, args...)
+			cmds = append(cmds, cmd)
 		}
+
+		spawnPrograms(cmds...)
 		prompt()
 	}
 
@@ -90,12 +76,7 @@ func prompt() {
 }
 
 func splitOnPipes(line string) (commands []string) {
-	pipesRegexp := regexp.MustCompile("([^\"'|]+)|[\"']([^\"']+)[\"']")
-	if pipesRegexp.MatchString(line) {
-		commands = pipesRegexp.FindAllString(line, -1)
-	} else {
-		commands = append(commands, line)
-	}
+	commands = strings.Split(line, "|")
 
 	for i, command := range commands {
 		commands[i] = strings.TrimSpace(command)
@@ -148,16 +129,63 @@ func spawnProgram(name string, args []string, placeHolderOut io.WriteCloser, pla
 	c.Stdout = placeHolderOut
 	c.Stderr = c.Stdout
 
-	//stdin, _ := c.StdinPipe()
-	//io.Copy(stdin, placeHolderIn)
-
-	//stdout, _ := c.StdoutPipe()
-	//io.Copy(placeHolderOut, stdout)
-
-	//stderr, _ := c.StderrPipe()
-	//io.Copy(placeHolderOut, stderr)
-
 	if err = c.Run(); err != nil {
 		panic(err)
 	}
+}
+
+func spawnPrograms(cmds ...*exec.Cmd) {
+	stdout, stderr, err := pipeline(cmds)
+	if err != nil {
+		fmt.Printf("%s\n", err)
+	}
+
+	if len(stdout) > 0 {
+		fmt.Printf("%s", stdout)
+	}
+
+	if len(stderr) > 0 {
+		fmt.Printf("%s", stderr)
+	}
+}
+
+func pipeline(cmds []*exec.Cmd) (pipeLineOutput, collectedStandardError []byte, pipeLineError error) {
+	if len(cmds) < 1 {
+		return nil, nil, nil
+	}
+
+	// Collect the output from the command(s)
+	var output bytes.Buffer
+	var stderr bytes.Buffer
+
+	last := len(cmds) - 1
+	for i, cmd := range cmds[:last] {
+		var err error
+		// Connect each command's stdin to the previous command's stdout
+		if cmds[i+1].Stdin, err = cmd.StdoutPipe(); err != nil {
+			return nil, nil, err
+		}
+		// Connect each command's stderr to a buffer
+		cmd.Stderr = &stderr
+	}
+
+	// Connect the output and error for the last command
+	cmds[last].Stdout, cmds[last].Stderr = &output, &stderr
+
+	// Start each command
+	for _, cmd := range cmds {
+		if err := cmd.Start(); err != nil {
+			return output.Bytes(), stderr.Bytes(), err
+		}
+	}
+
+	// Wait for each command to complete
+	for _, cmd := range cmds {
+		if err := cmd.Wait(); err != nil {
+			return output.Bytes(), stderr.Bytes(), err
+		}
+	}
+
+	// Return the pipeline output and the collected standard error
+	return output.Bytes(), stderr.Bytes(), nil
 }
