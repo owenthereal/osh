@@ -51,6 +51,10 @@ func main() {
 
 		for i, command := range commands {
 			name, args := parseCommand(command)
+			if name == "" {
+				continue
+			}
+
 			if isBuiltin(name) {
 				callBuiltin(name, args)
 			} else {
@@ -134,19 +138,26 @@ func callBuiltin(name string, args []string) {
 func spawnProgram(name string, args []string, placeHolderOut io.WriteCloser, placeHolderIn io.ReadCloser) {
 	cmdFullPath, err := exec.LookPath(name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "osh: command not found: %s", name)
+		fmt.Fprintf(os.Stderr, "osh: command not found: %s\n", name)
+		return
 	}
 
 	c := exec.Command(cmdFullPath, args...)
 	c.Env = os.Environ()
-
 	c.Stdin = placeHolderIn
 	c.Stdout = placeHolderOut
 	c.Stderr = c.Stdout
 
-	err = c.Run()
-	if err != nil {
-		//fmt.Fprintln(os.Stderr, stderr.String())
+	//stdin, _ := c.StdinPipe()
+	//io.Copy(stdin, placeHolderIn)
+
+	//stdout, _ := c.StdoutPipe()
+	//io.Copy(placeHolderOut, stdout)
+
+	//stderr, _ := c.StderrPipe()
+	//io.Copy(placeHolderOut, stderr)
+
+	if err = c.Run(); err != nil {
 		panic(err)
 	}
 }
