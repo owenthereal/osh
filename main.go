@@ -41,7 +41,7 @@ var BUILTINS = map[string]*Builtin{
 }
 
 func init() {
-	os.Setenv("PROMPT", "->")
+	os.Setenv("PROMPT", "-> ")
 }
 
 func main() {
@@ -79,7 +79,7 @@ func main() {
 }
 
 func prompt() {
-	fmt.Fprintf(os.Stdout, "%s ", os.Getenv("PROMPT"))
+	fmt.Printf(os.Getenv("PROMPT"))
 }
 
 func splitOnPipes(line string) (commands []string) {
