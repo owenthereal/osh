@@ -79,7 +79,7 @@ func main() {
 }
 
 func prompt() {
-	fmt.Printf(os.Getenv("PROMPT"))
+	fmt.Print(os.Getenv("PROMPT"))
 }
 
 func splitOnPipes(line string) (commands []string) {
@@ -135,11 +135,11 @@ func spawnPrograms(cmds ...*exec.Cmd) {
 	}
 
 	if len(stdout) > 0 {
-		fmt.Printf("%s", stdout)
+		fmt.Print(string(stdout))
 	}
 
 	if len(stderr) > 0 {
-		fmt.Printf("%s", stderr)
+		fmt.Print(string(stderr))
 	}
 }
 
